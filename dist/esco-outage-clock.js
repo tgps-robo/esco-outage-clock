@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.5.1";
+const CARD_VERSION = "1.5.2";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -64,9 +64,7 @@ function sectorLabels(start, duration) {
   for (let first = start; first < end;) {
     const boundary = (Math.floor(first / 720) + 1) * 720;
     const last = Math.min(end, boundary);
-    const angle = (last - first) * Math.PI / 360;
-    const radius = 4 * 85 * Math.sin(angle / 2) / (3 * angle);
-    const [x, y] = point((first + last) / 2, radius);
+    const [x, y] = point((first + last) / 2, 85 / 2);
     const period = Math.floor(first / 720) % 2 === 0 ? "AM" : "PM";
     markup += `<text x="${x}" y="${y}">${period}</text>`;
     first = last;
