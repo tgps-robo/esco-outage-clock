@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.4.1";
+const CARD_VERSION = "1.4.2";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -267,7 +267,7 @@ class EscoOutageClock extends HTMLElement {
       value = "Сенсори недоступні";
     } else if (start.state === "unknown" && duration.state === "unknown") {
       value = start.attributes?.schedule_status === "off"
-        ? "Сьогодні більше відключень не заплановано"
+        ? "Наступних відключень на сьогодні не заплановано"
         : "Немає даних про наступне відключення";
     } else if (!Number.isFinite(from.getTime()) || !(minutes > 0 && minutes <= 1440)) {
       value = "Перевірте дані сенсорів";
