@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.4.2";
+const CARD_VERSION = "1.5.0";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -56,6 +56,20 @@ function futureSectorCoversNow(begin, duration, now) {
   if (begin <= now) return false;
   const elapsed = (minuteOfDay(now) - minuteOfDay(begin) + 720) % 720;
   return elapsed < Math.min(duration, 720);
+}
+
+function sectorLabels(start, duration) {
+  let markup = "";
+  const end = start + duration;
+  for (let first = start; first < end;) {
+    const boundary = (Math.floor(first / 720) + 1) * 720;
+    const last = Math.min(end, boundary);
+    const [x, y] = point((first + last) / 2, 65);
+    const period = Math.floor(first / 720) % 2 === 0 ? "AM" : "PM";
+    markup += `<text x="${x}" y="${y}">${period}</text>`;
+    first = last;
+  }
+  return markup;
 }
 
 function durationMinutes(entity) {
@@ -131,6 +145,8 @@ class EscoOutageClock extends HTMLElement {
       svg{display:block;width:min(100%,300px);margin:8px auto;color:var(--primary-text-color)}
       .current-sector{fill:#ef5350;fill-opacity:.6;stroke:#ff8a80;stroke-width:.8}
       .sector{fill:#ffad45;fill-opacity:.53;stroke:#ffc46e;stroke-width:.8}
+      .sector-labels{pointer-events:none}
+      .sector-labels text{font:bold 8px sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:#151b24;stroke-width:2;stroke-linejoin:round}
       .hand,.minute{filter:drop-shadow(0 1px 1px #070d19)}
       strong{font-size:22px;font-variant-numeric:tabular-nums}
       strong:empty{display:none}
@@ -153,7 +169,7 @@ class EscoOutageClock extends HTMLElement {
         <linearGradient id="inlay"><stop stop-color="#a5ac9f"/><stop offset=".25" stop-color="#e7e5c9"/><stop offset=".8" stop-color="#f3f0db"/><stop offset="1" stop-color="#b4b8ab"/></linearGradient>
       </defs>
       <image class="face" width="240" height="240"/>
-      <path class="sector"/><path class="current-sector"/>
+      <path class="sector"/><path class="current-sector"/><g class="sector-labels"></g>
       <g transform="translate(120 163)">
         <circle r="18" fill="#0e1925" stroke="#778493"/><circle r="15.5" fill="none" stroke="#334958" stroke-dasharray="1 2"/>
         <text class="period" y="3" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#b6cadc"></text>
@@ -163,7 +179,7 @@ class EscoOutageClock extends HTMLElement {
       <circle cx="120" cy="120" r="4.6" fill="url(#steel)" stroke="#192025" stroke-width=".7"/><circle cx="120" cy="120" r="2.1" fill="url(#blade)"/>
     </svg><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
     root.querySelector(".face").setAttribute("href", new URL("./esco-clock-face.png", import.meta.url).href);
-    this.parts = Object.fromEntries([".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
+    this.parts = Object.fromEntries([".sector-labels", ".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
     this.parts[".bulb"].addEventListener("click", () => {
       if (!this.config?.power_entity) return;
       this.dispatchEvent(new CustomEvent("hass-more-info", {
@@ -261,6 +277,7 @@ class EscoOutageClock extends HTMLElement {
     let caption = "";
     let value;
     let path = "";
+    let annotations = "";
     if (!this._entityId("start_entity") || !this._entityId("duration_entity")) {
       value = QUEUES.includes(this.config?.line) ? "Сенсори цієї черги не знайдено — додайте її в ESCO Outages" : "Виберіть два сенсори ESCO";
     } else if (!start || !duration || [start.state, duration.state].includes("unavailable")) {
@@ -281,6 +298,7 @@ class EscoOutageClock extends HTMLElement {
       caption = `${Math.round(minutes)} хв`;
       path = futureSectorCoversNow(from, minutes, now) ? ""
         : visibleSector(first, minutes, current, this.config?.show_12_hours === true);
+      if (path) annotations += sectorLabels(first, minutes);
     }
     // The previous next-outage sensors can still describe an active interval
     // until the integration's next poll.
@@ -295,6 +313,7 @@ class EscoOutageClock extends HTMLElement {
       const end = new Date(begin.getTime() + length * 60000);
       if (Number.isFinite(begin.getTime()) && length > 0 && length <= 1440 && begin <= now && now < end) {
         currentPath = visibleSector(minuteOfDay(begin), length, current, this.config?.show_12_hours === true);
+        if (currentPath) annotations += sectorLabels(minuteOfDay(begin), length);
         caption += `${caption ? " · " : ""}Зараз ${clock.format(begin)}–${clock.format(end)}`;
         break;
       }
@@ -302,6 +321,7 @@ class EscoOutageClock extends HTMLElement {
     if (Array.isArray(start?.attributes?.outages)) {
       path = "";
       currentPath = "";
+      annotations = "";
       const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit" });
       const activeIntervals = start.attributes.outages.filter(outage => {
         const begin = new Date(outage.start).getTime();
@@ -321,6 +341,7 @@ class EscoOutageClock extends HTMLElement {
         if (futureSectorCoversNow(begin, length, now)) continue;
         if (!active && activeIntervals.some(interval => overlapsOnDial([minuteOfDay(begin), length], interval))) continue;
         const fragment = visibleSector(minuteOfDay(begin), length, current, false);
+        if (fragment) annotations += sectorLabels(minuteOfDay(begin), length);
         if (active) currentPath += fragment;
         else path += fragment;
       }
@@ -344,6 +365,7 @@ class EscoOutageClock extends HTMLElement {
     }
     this.parts[".current-sector"].setAttribute("d", currentPath);
     this.parts[".sector"].setAttribute("d", path);
+    this.parts[".sector-labels"].innerHTML = annotations;
     this.parts.strong.textContent = value;
     this.parts.small.textContent = caption;
   }
