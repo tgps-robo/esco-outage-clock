@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.5.2";
+const CARD_VERSION = "1.6.0";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -64,7 +64,7 @@ function sectorLabels(start, duration) {
   for (let first = start; first < end;) {
     const boundary = (Math.floor(first / 720) + 1) * 720;
     const last = Math.min(end, boundary);
-    const [x, y] = point((first + last) / 2, 85 / 2);
+    const [x, y] = point((first + last) / 2, 16);
     const period = Math.floor(first / 720) % 2 === 0 ? "AM" : "PM";
     markup += `<text x="${x}" y="${y}">${period}</text>`;
     first = last;
@@ -105,6 +105,7 @@ class EscoOutageClock extends HTMLElement {
         }] } },
       })),
       { name: "show_12_hours", selector: { boolean: {} } },
+      { name: "show_sector_ampm", default: true, selector: { boolean: {} } },
       { name: "show_last_poll", selector: { boolean: {} } },
       { name: "show_schedule_updated", selector: { boolean: {} } },
       { name: "clear_past_periods", selector: { boolean: {} } },
@@ -118,6 +119,7 @@ class EscoOutageClock extends HTMLElement {
         title_mode: "Заголовок",
         dial: "Циферблат",
         show_12_hours: "Відображати відключення на 12 годин",
+        show_sector_ampm: "Відображати AM/PM у секторі",
         show_last_poll: "Час останнього опитування",
         show_schedule_updated: "Час зміни графіка",
         clear_past_periods: "Очищати минулі періоди",
@@ -146,7 +148,7 @@ class EscoOutageClock extends HTMLElement {
       .current-sector{fill:#ef5350;fill-opacity:.6;stroke:#ff8a80;stroke-width:.8}
       .sector{fill:#ffad45;fill-opacity:.53;stroke:#ffc46e;stroke-width:.8}
       .sector-labels{pointer-events:none}
-      .sector-labels text{font:bold 8px sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:#151b24;stroke-width:2;stroke-linejoin:round}
+      .sector-labels text{font:bold 7px sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:#151b24;stroke-width:2;stroke-linejoin:round}
       .hand,.minute{filter:drop-shadow(0 1px 1px #070d19)}
       strong{font-size:22px;font-variant-numeric:tabular-nums}
       strong:empty{display:none}
@@ -365,7 +367,7 @@ class EscoOutageClock extends HTMLElement {
     }
     this.parts[".current-sector"].setAttribute("d", currentPath);
     this.parts[".sector"].setAttribute("d", path);
-    this.parts[".sector-labels"].innerHTML = annotations;
+    this.parts[".sector-labels"].innerHTML = this.config?.show_sector_ampm !== false ? annotations : "";
     this.parts.strong.textContent = value;
     this.parts.small.textContent = caption;
   }
