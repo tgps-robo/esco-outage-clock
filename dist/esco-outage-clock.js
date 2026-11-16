@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.6.0";
+const CARD_VERSION = "1.7.0";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -152,6 +152,7 @@ class EscoOutageClock extends HTMLElement {
       .hand,.minute{filter:drop-shadow(0 1px 1px #070d19)}
       strong{font-size:22px;font-variant-numeric:tabular-nums}
       strong:empty{display:none}
+      .interval-label{font-size:13px;margin-bottom:6px;color:var(--secondary-text-color)}
       small{display:block;margin-top:5px;color:var(--secondary-text-color)}
       small:empty{display:none}
       footer{display:flex;justify-content:space-between;gap:12px;margin-top:16px;font-size:11px;color:var(--secondary-text-color);text-align:left}
@@ -179,9 +180,9 @@ class EscoOutageClock extends HTMLElement {
       <g class="hand"><path d="M116.9 128L115.4 72 120 57 124.6 72 123.1 128Z" fill="url(#blade)" stroke="#253039" stroke-width=".6"/><path d="M117.9 74l2.1-8 2.1 8-.7 31h-2.8Z" fill="url(#inlay)"/></g>
       <g class="minute"><path d="M117.8 131l-.8-92 3-15 3 15-.8 92Z" fill="url(#blade)" stroke="#26313a" stroke-width=".5"/><path d="M118.7 43l1.3-8 1.3 8-.45 59h-1.7Z" fill="url(#inlay)"/></g>
       <circle cx="120" cy="120" r="4.6" fill="url(#steel)" stroke="#192025" stroke-width=".7"/><circle cx="120" cy="120" r="2.1" fill="url(#blade)"/>
-    </svg><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
+    </svg><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
     root.querySelector(".face").setAttribute("href", new URL("./esco-clock-face.png", import.meta.url).href);
-    this.parts = Object.fromEntries([".sector-labels", ".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
+    this.parts = Object.fromEntries([".interval-label", ".sector-labels", ".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
     this.parts[".bulb"].addEventListener("click", () => {
       if (!this.config?.power_entity) return;
       this.dispatchEvent(new CustomEvent("hass-more-info", {
@@ -369,6 +370,9 @@ class EscoOutageClock extends HTMLElement {
     this.parts[".sector"].setAttribute("d", path);
     this.parts[".sector-labels"].innerHTML = this.config?.show_sector_ampm !== false ? annotations : "";
     this.parts.strong.textContent = value;
+    this.parts[".interval-label"].hidden = !(this.config?.title_mode === "line"
+      && Number.isFinite(from.getTime()) && from > now && minutes > 0 && minutes <= 1440
+      && start && duration && ![start.state, duration.state].includes("unavailable"));
     this.parts.small.textContent = caption;
   }
 }
