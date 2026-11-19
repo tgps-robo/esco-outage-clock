@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.0";
+const CARD_VERSION = "1.7.1";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -77,6 +77,33 @@ function durationMinutes(entity) {
   return Number(entity?.state) * factor;
 }
 
+function dailyTimeline(outages, now) {
+  const dateFormat = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const today = dateFormat.format(now);
+  const ranges = [];
+  for (const outage of outages) {
+    const begin = new Date(outage.start);
+    const length = outage.duration_minutes;
+    if (!Number.isFinite(begin.getTime()) || !Number.isFinite(length) || length <= 0 || length > 1440) continue;
+    const end = new Date(begin.getTime() + length * 60000);
+    let first;
+    let last;
+    const beginDay = dateFormat.format(begin);
+    const endDay = dateFormat.format(end);
+    if (beginDay === today) first = minuteOfDay(begin);
+    else if (beginDay < today && endDay >= today) first = 0;
+    else continue;
+    last = endDay === today ? minuteOfDay(end) : 1440;
+    if (last <= first) continue;
+    const format = minute => `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+    ranges.push({ first, last, active: begin <= now && now < end, label: `${format(first)}–${format(last)}` });
+  }
+  return [...new Map(ranges.map(range => [`${range.first}-${range.last}`, range])).values()]
+    .sort((a, b) => a.first - b.first);
+}
+
 class EscoOutageClock extends HTMLElement {
   static getStubConfig() { return {}; }
   static getConfigElement() { return document.createElement("esco-outage-clock-editor"); }
@@ -145,6 +172,19 @@ class EscoOutageClock extends HTMLElement {
       .bulb.unknown{color:var(--secondary-text-color,#8b949e);opacity:.65}
       .bulb:focus-visible{outline:2px solid var(--primary-color);border-radius:6px}
       svg{display:block;width:min(100%,300px);margin:8px auto;color:var(--primary-text-color)}
+      .clock-toggle,.timeline-toggle{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+      .clock-toggle[hidden],.timeline-toggle[hidden]{display:none}
+      .clock-toggle:focus-visible,.timeline-toggle:focus-visible{outline:2px solid var(--primary-color);outline-offset:3px;border-radius:8px}
+      .timeline-toggle{min-height:300px;padding:24px 0;box-sizing:border-box}
+      .timeline-date{display:block;font-size:14px;margin-bottom:44px;color:var(--secondary-text-color)}
+      .timeline-track{display:block;position:relative;height:24px;border-radius:6px;background:#f9e7ae}
+      .timeline-range{position:absolute;top:0;height:100%;background:#f3c742;border-radius:3px}
+      .timeline-range.active{background:#ed765d}
+      .timeline-grid{position:absolute;inset:0;border-radius:6px;background:repeating-linear-gradient(to right,transparent 0,transparent calc(100% / 24 - 1px),#75652122 calc(100% / 24 - 1px),#75652122 calc(100% / 24));pointer-events:none}
+      .timeline-marker{position:absolute;top:-5px;bottom:-5px;width:3px;transform:translateX(-50%);background:#fff;border:1px solid #454f55;border-radius:3px;box-shadow:0 0 0 1px #ffffff80}
+      .timeline-now{position:absolute;bottom:calc(100% + 8px);font-size:11px;font-weight:600;line-height:16px;padding:0 4px;border-radius:5px;background:#29343b;color:#fff;white-space:nowrap}
+      .timeline-hours{display:flex;justify-content:space-between;font-size:9px;color:var(--secondary-text-color);margin-top:8px}
+      .timeline-list{display:block;font-size:12px;line-height:1.8;margin-top:20px;color:var(--secondary-text-color)}
       .current-sector{fill:#ef5350;fill-opacity:.6;stroke:#ff8a80;stroke-width:.8}
       .sector{fill:#ffad45;fill-opacity:.53;stroke:#ffc46e;stroke-width:.8}
       .sector-labels{pointer-events:none}
@@ -160,7 +200,7 @@ class EscoOutageClock extends HTMLElement {
       footer span:last-child{text-align:right}
       footer[hidden]{display:none}
       footer span[hidden]{display:block;visibility:hidden}
-    </style><ha-card><span class="version">v${CARD_VERSION}</span><header><h2>Найближче відключення</h2><button class="bulb" hidden><ha-icon icon="mdi:lightbulb-outline"></ha-icon></button></header><svg viewBox="0 0 240 240" aria-hidden="true">
+    </style><ha-card><span class="version">v${CARD_VERSION}</span><header><h2>Найближче відключення</h2><button class="bulb" hidden><ha-icon icon="mdi:lightbulb-outline"></ha-icon></button></header><button class="clock-toggle" type="button" aria-label="Показати графік відключень за день"><svg viewBox="0 0 240 240" aria-hidden="true">
       <defs>
         <linearGradient id="steel" x2=".7" y2="1"><stop stop-color="#edf4fa"/><stop offset=".24" stop-color="#798794"/><stop offset=".48" stop-color="#354452"/><stop offset=".54" stop-color="#d4dce4"/><stop offset="1" stop-color="#526371"/></linearGradient>
         <linearGradient id="blade">
@@ -180,9 +220,16 @@ class EscoOutageClock extends HTMLElement {
       <g class="hand"><path d="M116.9 128L115.4 72 120 57 124.6 72 123.1 128Z" fill="url(#blade)" stroke="#253039" stroke-width=".6"/><path d="M117.9 74l2.1-8 2.1 8-.7 31h-2.8Z" fill="url(#inlay)"/></g>
       <g class="minute"><path d="M117.8 131l-.8-92 3-15 3 15-.8 92Z" fill="url(#blade)" stroke="#26313a" stroke-width=".5"/><path d="M118.7 43l1.3-8 1.3 8-.45 59h-1.7Z" fill="url(#inlay)"/></g>
       <circle cx="120" cy="120" r="4.6" fill="url(#steel)" stroke="#192025" stroke-width=".7"/><circle cx="120" cy="120" r="2.1" fill="url(#blade)"/>
-    </svg><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
+    </svg></button><button class="timeline-toggle" type="button" hidden aria-label="Повернути годинник"><span class="timeline-date"></span><span class="timeline-track"></span><span class="timeline-hours">${Array.from({ length: 25 }, (_, h) => `<span>${h}</span>`).join("")}</span><span class="timeline-list"></span></button><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
     root.querySelector(".face").setAttribute("href", new URL("./esco-clock-face.png", import.meta.url).href);
     this.parts = Object.fromEntries([".interval-label", ".sector-labels", ".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
+    for (const selector of [".clock-toggle", ".timeline-toggle"]) {
+      root.querySelector(selector).addEventListener("click", () => {
+        this.timelineVisible = !this.timelineVisible;
+        this.render();
+        root.querySelector(this.timelineVisible ? ".timeline-toggle" : ".clock-toggle").focus();
+      });
+    }
     this.parts[".bulb"].addEventListener("click", () => {
       if (!this.config?.power_entity) return;
       this.dispatchEvent(new CustomEvent("hass-more-info", {
@@ -307,6 +354,24 @@ class EscoOutageClock extends HTMLElement {
     // until the integration's next poll.
     const activeStart = states[this._entityId("current_start_entity")];
     const activeDuration = states[this._entityId("current_duration_entity")];
+    const timelineOutages = Array.isArray(start?.attributes?.outages) ? start.attributes.outages : [
+      { start: start?.state, duration_minutes: minutes },
+      { start: activeStart?.state, duration_minutes: durationMinutes(activeDuration) },
+    ];
+    const ranges = dailyTimeline(timelineOutages, now);
+    this.shadowRoot.querySelector(".clock-toggle").hidden = this.timelineVisible === true;
+    this.shadowRoot.querySelector(".timeline-toggle").hidden = this.timelineVisible !== true;
+    this.shadowRoot.querySelector(".timeline-date").textContent = new Intl.DateTimeFormat("uk-UA", {
+      timeZone: "Europe/Kyiv", day: "numeric", month: "long", year: "numeric",
+    }).format(now);
+    const position = current / 1440 * 100;
+    this.shadowRoot.querySelector(".timeline-track").innerHTML = ranges.map(range =>
+      `<span class="timeline-range${range.active ? " active" : ""}" style="left:${range.first / 1440 * 100}%;width:${(range.last - range.first) / 1440 * 100}%" title="Відключення ${range.label}"></span>`
+    ).join("") + `<span class="timeline-grid"></span><span class="timeline-marker" style="left:${position}%"></span><span class="timeline-now" style="left:${position}%;transform:translateX(${position < 5 ? "0" : position > 95 ? "-100%" : "-50%"})">${clock.format(now)}</span>`;
+    this.shadowRoot.querySelector(".timeline-list").textContent = !start || start.state === "unavailable"
+      ? "Графік недоступний" : ranges.length ? ranges.map(range => range.label).join(" · ")
+      : start.attributes?.schedule_status === "off" || Array.isArray(start.attributes?.outages)
+        ? "Відключень на цей день не заплановано" : "Немає даних графіка";
     const candidates = [
       [new Date(activeStart?.state), durationMinutes(activeDuration)],
       [from, minutes],
