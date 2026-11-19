@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.1";
+const CARD_VERSION = "1.7.2";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -77,11 +77,11 @@ function durationMinutes(entity) {
   return Number(entity?.state) * factor;
 }
 
-function dailyTimeline(outages, now) {
+function dailyTimeline(outages, now, displayedDay = now) {
   const dateFormat = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit",
   });
-  const today = dateFormat.format(now);
+  const today = dateFormat.format(displayedDay);
   const ranges = [];
   for (const outage of outages) {
     const begin = new Date(outage.start);
@@ -102,6 +102,12 @@ function dailyTimeline(outages, now) {
   }
   return [...new Map(ranges.map(range => [`${range.first}-${range.last}`, range])).values()]
     .sort((a, b) => a.first - b.first);
+}
+
+function timelineTrack(ranges) {
+  return ranges.map(range =>
+    `<span class="timeline-range${range.active ? " active" : ""}" style="left:${range.first / 1440 * 100}%;width:${(range.last - range.first) / 1440 * 100}%" title="Відключення ${range.label}"></span>`
+  ).join("") + '<span class="timeline-grid"></span>';
 }
 
 class EscoOutageClock extends HTMLElement {
@@ -185,6 +191,9 @@ class EscoOutageClock extends HTMLElement {
       .timeline-now{position:absolute;bottom:calc(100% + 8px);font-size:11px;font-weight:600;line-height:16px;padding:0 4px;border-radius:5px;background:#29343b;color:#fff;white-space:nowrap}
       .timeline-hours{display:flex;justify-content:space-between;font-size:9px;color:var(--secondary-text-color);margin-top:8px}
       .timeline-list{display:block;font-size:12px;line-height:1.8;margin-top:20px;color:var(--secondary-text-color)}
+      .tomorrow-timeline{display:block;margin-top:32px}
+      .tomorrow-timeline[hidden]{display:none}
+      .tomorrow-date{margin-bottom:20px}
       .current-sector{fill:#ef5350;fill-opacity:.6;stroke:#ff8a80;stroke-width:.8}
       .sector{fill:#ffad45;fill-opacity:.53;stroke:#ffc46e;stroke-width:.8}
       .sector-labels{pointer-events:none}
@@ -220,7 +229,7 @@ class EscoOutageClock extends HTMLElement {
       <g class="hand"><path d="M116.9 128L115.4 72 120 57 124.6 72 123.1 128Z" fill="url(#blade)" stroke="#253039" stroke-width=".6"/><path d="M117.9 74l2.1-8 2.1 8-.7 31h-2.8Z" fill="url(#inlay)"/></g>
       <g class="minute"><path d="M117.8 131l-.8-92 3-15 3 15-.8 92Z" fill="url(#blade)" stroke="#26313a" stroke-width=".5"/><path d="M118.7 43l1.3-8 1.3 8-.45 59h-1.7Z" fill="url(#inlay)"/></g>
       <circle cx="120" cy="120" r="4.6" fill="url(#steel)" stroke="#192025" stroke-width=".7"/><circle cx="120" cy="120" r="2.1" fill="url(#blade)"/>
-    </svg></button><button class="timeline-toggle" type="button" hidden aria-label="Повернути годинник"><span class="timeline-date"></span><span class="timeline-track"></span><span class="timeline-hours">${Array.from({ length: 25 }, (_, h) => `<span>${h}</span>`).join("")}</span><span class="timeline-list"></span></button><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
+    </svg></button><button class="timeline-toggle" type="button" hidden aria-label="Повернути годинник"><span class="timeline-date"></span><span class="timeline-track"></span><span class="timeline-hours">${Array.from({ length: 25 }, (_, h) => `<span>${h}</span>`).join("")}</span><span class="timeline-list"></span><span class="tomorrow-timeline" hidden><span class="timeline-date tomorrow-date"></span><span class="timeline-track tomorrow-track"></span><span class="timeline-hours">${Array.from({ length: 25 }, (_, h) => `<span>${h}</span>`).join("")}</span><span class="timeline-list tomorrow-list"></span></span></button><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
     root.querySelector(".face").setAttribute("href", new URL("./esco-clock-face.png", import.meta.url).href);
     this.parts = Object.fromEntries([".interval-label", ".sector-labels", ".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
     for (const selector of [".clock-toggle", ".timeline-toggle"]) {
@@ -365,13 +374,25 @@ class EscoOutageClock extends HTMLElement {
       timeZone: "Europe/Kyiv", day: "numeric", month: "long", year: "numeric",
     }).format(now);
     const position = current / 1440 * 100;
-    this.shadowRoot.querySelector(".timeline-track").innerHTML = ranges.map(range =>
-      `<span class="timeline-range${range.active ? " active" : ""}" style="left:${range.first / 1440 * 100}%;width:${(range.last - range.first) / 1440 * 100}%" title="Відключення ${range.label}"></span>`
-    ).join("") + `<span class="timeline-grid"></span><span class="timeline-marker" style="left:${position}%"></span><span class="timeline-now" style="left:${position}%;transform:translateX(${position < 5 ? "0" : position > 95 ? "-100%" : "-50%"})">${clock.format(now)}</span>`;
+    this.shadowRoot.querySelector(".timeline-track").innerHTML = timelineTrack(ranges)
+      + `<span class="timeline-marker" style="left:${position}%"></span><span class="timeline-now" style="left:${position}%;transform:translateX(${position < 5 ? "0" : position > 95 ? "-100%" : "-50%"})">${clock.format(now)}</span>`;
     this.shadowRoot.querySelector(".timeline-list").textContent = !start || start.state === "unavailable"
       ? "Графік недоступний" : ranges.length ? ranges.map(range => range.label).join(" · ")
       : start.attributes?.schedule_status === "off" || Array.isArray(start.attributes?.outages)
         ? "Відключень на цей день не заплановано" : "Немає даних графіка";
+    const dayKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(now);
+    // UTC noon stays on the intended Kyiv date even across DST changes.
+    const tomorrow = new Date(new Date(`${dayKey}T12:00:00Z`).getTime() + 86400000);
+    const tomorrowRanges = dailyTimeline(timelineOutages, now, tomorrow);
+    this.shadowRoot.querySelector(".tomorrow-timeline").hidden = tomorrowRanges.length === 0
+      || !start || start.state === "unavailable";
+    this.shadowRoot.querySelector(".tomorrow-date").textContent = new Intl.DateTimeFormat("uk-UA", {
+      timeZone: "Europe/Kyiv", day: "numeric", month: "long", year: "numeric",
+    }).format(tomorrow);
+    this.shadowRoot.querySelector(".tomorrow-track").innerHTML = timelineTrack(tomorrowRanges);
+    this.shadowRoot.querySelector(".tomorrow-list").textContent = tomorrowRanges.map(range => range.label).join(" · ");
     const candidates = [
       [new Date(activeStart?.state), durationMinutes(activeDuration)],
       [from, minutes],
