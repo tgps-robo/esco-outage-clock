@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.2";
+const CARD_VERSION = "1.7.3";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -184,8 +184,8 @@ class EscoOutageClock extends HTMLElement {
       .timeline-toggle{min-height:300px;padding:24px 0;box-sizing:border-box}
       .timeline-date{display:block;font-size:14px;margin-bottom:44px;color:var(--secondary-text-color)}
       .timeline-track{display:block;position:relative;height:24px;border-radius:6px;background:#f9e7ae}
-      .timeline-range{position:absolute;top:0;height:100%;background:#f3c742;border-radius:3px}
-      .timeline-range.active{background:#ed765d}
+      .timeline-range{position:absolute;top:0;height:100%;background:#8b9198;border-radius:3px}
+      .timeline-range.active{background:#626970}
       .timeline-grid{position:absolute;inset:0;border-radius:6px;background:repeating-linear-gradient(to right,transparent 0,transparent calc(100% / 24 - 1px),#75652122 calc(100% / 24 - 1px),#75652122 calc(100% / 24));pointer-events:none}
       .timeline-marker{position:absolute;top:-5px;bottom:-5px;width:3px;transform:translateX(-50%);background:#fff;border:1px solid #454f55;border-radius:3px;box-shadow:0 0 0 1px #ffffff80}
       .timeline-now{position:absolute;bottom:calc(100% + 8px);font-size:11px;font-weight:600;line-height:16px;padding:0 4px;border-radius:5px;background:#29343b;color:#fff;white-space:nowrap}
