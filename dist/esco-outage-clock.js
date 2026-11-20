@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.4";
+const CARD_VERSION = "1.7.5";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -123,6 +123,10 @@ class EscoOutageClock extends HTMLElement {
   static getConfigForm() {
     return {
       schema: [
+      { name: "default_view", default: "clock", selector: { select: { mode: "dropdown", options: [
+        { value: "clock", label: "Циферблат" },
+        { value: "timeline", label: "Шкала" },
+      ] } } },
       { name: "line", selector: { select: { mode: "dropdown", options: [
         { value: "manual", label: "Вибрати сенсори вручну" },
         ...QUEUES.map(value => ({ value, label: `Черга ${value}` })),
@@ -155,6 +159,7 @@ class EscoOutageClock extends HTMLElement {
       { name: "invert_power", visible: { field: "show_real_outage", value: true }, selector: { boolean: {} } },
       ],
       computeLabel: field => labels[field.name] ?? {
+        default_view: "Вигляд за замовчуванням",
         line: "Черга — автоматичний вибір сенсорів",
         title_mode: "Заголовок",
         dial: "Циферблат",
@@ -256,6 +261,10 @@ class EscoOutageClock extends HTMLElement {
   }
 
   setConfig(config) {
+    const defaultView = config.default_view ?? "clock";
+    if (!["clock", "timeline"].includes(defaultView)) {
+      throw new Error("Виберіть вигляд: циферблат або шкала");
+    }
     if (config.line !== undefined && config.line !== "manual" && !QUEUES.includes(config.line)) {
       throw new Error("Виберіть чергу від 1.1 до 6.2");
     }
@@ -267,6 +276,9 @@ class EscoOutageClock extends HTMLElement {
     }
     for (const key of Object.keys(labels)) {
       if (config[key] && !/^sensor\.[a-z0-9_]+$/.test(config[key])) throw new Error(labels[key]);
+    }
+    if (!this.config || (this.config.default_view ?? "clock") !== defaultView) {
+      this.timelineVisible = defaultView === "timeline";
     }
     this.config = config;
     this.shadowRoot.querySelector(".face").setAttribute("href", new URL(`./${DIALS[config.dial ?? "citizen"]}`, import.meta.url).href);
