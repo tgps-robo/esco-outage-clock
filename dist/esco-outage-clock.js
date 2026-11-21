@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.5";
+const CARD_VERSION = "1.7.6";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -387,7 +387,11 @@ class EscoOutageClock extends HTMLElement {
       { start: start?.state, duration_minutes: minutes },
       { start: activeStart?.state, duration_minutes: durationMinutes(activeDuration) },
     ];
-    const ranges = dailyTimeline(timelineOutages, now);
+    const visibleTimelineOutages = this.config?.clear_past_periods === true
+      ? timelineOutages.filter(outage => new Date(outage.start).getTime()
+        + outage.duration_minutes * 60000 > now.getTime())
+      : timelineOutages;
+    const ranges = dailyTimeline(visibleTimelineOutages, now);
     this.shadowRoot.querySelector(".clock-toggle").hidden = this.timelineVisible === true;
     this.shadowRoot.querySelector(".timeline-toggle").hidden = this.timelineVisible !== true;
     this.shadowRoot.querySelector(".timeline-date").textContent = new Intl.DateTimeFormat("uk-UA", {
@@ -399,13 +403,16 @@ class EscoOutageClock extends HTMLElement {
     this.shadowRoot.querySelector(".timeline-list").textContent = !start || start.state === "unavailable"
       ? "Графік недоступний" : ranges.length ? ranges.map(range => range.label).join(" · ")
       : start.attributes?.schedule_status === "off" || Array.isArray(start.attributes?.outages)
-        ? "Відключень на цей день не заплановано" : "Немає даних графіка";
+        ? this.config?.clear_past_periods === true
+          ? "Наступних відключень на сьогодні не заплановано"
+          : "Відключень на цей день не заплановано"
+        : "Немає даних графіка";
     const dayKey = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit",
     }).format(now);
     // UTC noon stays on the intended Kyiv date even across DST changes.
     const tomorrow = new Date(new Date(`${dayKey}T12:00:00Z`).getTime() + 86400000);
-    const tomorrowRanges = dailyTimeline(timelineOutages, now, tomorrow);
+    const tomorrowRanges = dailyTimeline(visibleTimelineOutages, now, tomorrow);
     this.shadowRoot.querySelector(".tomorrow-timeline").hidden = tomorrowRanges.length === 0
       || !start || start.state === "unavailable";
     this.shadowRoot.querySelector(".tomorrow-date").textContent = new Intl.DateTimeFormat("uk-UA", {
