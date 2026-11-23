@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.7";
+const CARD_VERSION = "1.7.8";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -387,7 +387,7 @@ class EscoOutageClock extends HTMLElement {
       { start: start?.state, duration_minutes: minutes },
       { start: activeStart?.state, duration_minutes: durationMinutes(activeDuration) },
     ];
-    const hideFinished = this.config?.clear_past_periods === true || this.config?.show_12_hours === true;
+    const hideFinished = this.config?.clear_past_periods === true;
     const visibleTimelineOutages = hideFinished
       ? timelineOutages.filter(outage => new Date(outage.start).getTime()
         + outage.duration_minutes * 60000 > now.getTime())
@@ -451,12 +451,13 @@ class EscoOutageClock extends HTMLElement {
         if (!Number.isFinite(begin.getTime()) || !Number.isFinite(length) || length <= 0 || length > 1440) continue;
         const end = new Date(begin.getTime() + length * 60000);
         if (this.config?.show_12_hours === true) {
-          if (end <= now || begin.getTime() >= now.getTime() + 12 * 60 * 60000) continue;
+          if (begin.getTime() >= now.getTime() + 12 * 60 * 60000) continue;
+          if (dayFormat.format(end) < dayFormat.format(now)) continue;
         } else if (dayFormat.format(begin) !== dayFormat.format(now)) continue;
         if (this.config?.clear_past_periods === true && end <= now) continue;
         const active = begin <= now && now < end;
         if (futureSectorCoversNow(begin, length, now)) continue;
-        if (!active && activeIntervals.some(interval => overlapsOnDial([minuteOfDay(begin), length], interval))) continue;
+        if (begin > now && activeIntervals.some(interval => overlapsOnDial([minuteOfDay(begin), length], interval))) continue;
         const fragment = visibleSector(minuteOfDay(begin), length, current, false);
         if (fragment) annotations += sectorLabels(minuteOfDay(begin), length);
         if (active) currentPath += fragment;
