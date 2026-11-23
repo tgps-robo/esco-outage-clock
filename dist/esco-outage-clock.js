@@ -1,6 +1,6 @@
 // Standalone dashboard resource for ESCO Outages.
 const TYPE = "esco-outage-clock";
-const CARD_VERSION = "1.7.8";
+const CARD_VERSION = "1.7.9";
 const DIALS = {
   citizen: "esco-clock-face.png",
   rolex: "esco-clock-rolex.png",
@@ -117,6 +117,25 @@ function timelineHours() {
   }).join("");
 }
 
+function totalTimelineMinutes(ranges) {
+  let total = 0;
+  let coveredUntil = 0;
+  for (const range of ranges) {
+    total += Math.max(0, range.last - Math.max(range.first, coveredUntil));
+    coveredUntil = Math.max(coveredUntil, range.last);
+  }
+  return total;
+}
+
+function dailyTotalLabel(minutes) {
+  if (!Number.isFinite(minutes) || minutes < 0) return "Сумарно за добу: —";
+  const rounded = Math.round(minutes);
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+  const value = hours ? `${hours} год${rest ? ` ${rest} хв` : ""}` : `${rest} хв`;
+  return `Сумарно за добу: ${value}`;
+}
+
 class EscoOutageClock extends HTMLElement {
   static getStubConfig() { return {}; }
   static getConfigElement() { return document.createElement("esco-outage-clock-editor"); }
@@ -204,6 +223,7 @@ class EscoOutageClock extends HTMLElement {
       .timeline-hours{display:block;position:relative;height:14px;font-size:9px;line-height:14px;color:var(--secondary-text-color);margin-top:8px;font-variant-numeric:tabular-nums}
       .timeline-hours>span{position:absolute;top:0;white-space:nowrap}
       .timeline-list{display:block;font-size:12px;line-height:1.8;margin-top:20px;color:var(--secondary-text-color)}
+      .timeline-total{display:block;font-size:12px;line-height:1.8;margin-top:4px;color:var(--secondary-text-color)}
       .tomorrow-timeline{display:block;margin-top:32px}
       .tomorrow-timeline[hidden]{display:none}
       .tomorrow-date{margin-bottom:20px}
@@ -242,7 +262,7 @@ class EscoOutageClock extends HTMLElement {
       <g class="hand"><path d="M116.9 128L115.4 72 120 57 124.6 72 123.1 128Z" fill="url(#blade)" stroke="#253039" stroke-width=".6"/><path d="M117.9 74l2.1-8 2.1 8-.7 31h-2.8Z" fill="url(#inlay)"/></g>
       <g class="minute"><path d="M117.8 131l-.8-92 3-15 3 15-.8 92Z" fill="url(#blade)" stroke="#26313a" stroke-width=".5"/><path d="M118.7 43l1.3-8 1.3 8-.45 59h-1.7Z" fill="url(#inlay)"/></g>
       <circle cx="120" cy="120" r="4.6" fill="url(#steel)" stroke="#192025" stroke-width=".7"/><circle cx="120" cy="120" r="2.1" fill="url(#blade)"/>
-    </svg></button><button class="timeline-toggle" type="button" hidden aria-label="Повернути годинник"><span class="timeline-date"></span><span class="timeline-track"></span><span class="timeline-hours">${timelineHours()}</span><span class="timeline-list"></span><span class="tomorrow-timeline" hidden><span class="timeline-date tomorrow-date"></span><span class="timeline-track tomorrow-track"></span><span class="timeline-hours">${timelineHours()}</span><span class="timeline-list tomorrow-list"></span></span></button><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
+    </svg></button><button class="timeline-toggle" type="button" hidden aria-label="Повернути годинник"><span class="timeline-date"></span><span class="timeline-track"></span><span class="timeline-hours">${timelineHours()}</span><span class="timeline-list"></span><span class="timeline-total"></span><span class="tomorrow-timeline" hidden><span class="timeline-date tomorrow-date"></span><span class="timeline-track tomorrow-track"></span><span class="timeline-hours">${timelineHours()}</span><span class="timeline-list tomorrow-list"></span><span class="timeline-total tomorrow-total"></span></span></button><div class="interval-label" hidden>Найближче відключення</div><strong></strong><small></small><footer><span class="last-poll" hidden></span><span class="schedule-updated" hidden></span></footer></ha-card>`;
     root.querySelector(".face").setAttribute("href", new URL("./esco-clock-face.png", import.meta.url).href);
     this.parts = Object.fromEntries([".interval-label", ".sector-labels", ".last-poll", ".schedule-updated", ".bulb", ".sector", ".current-sector", ".hand", ".minute", ".period", "strong", "small"].map(key => [key, root.querySelector(key)]));
     for (const selector of [".clock-toggle", ".timeline-toggle"]) {
@@ -287,7 +307,9 @@ class EscoOutageClock extends HTMLElement {
   set hass(value) {
     const previous = this._hass;
     this._hass = value;
-    if (QUEUES.includes(this.config?.line) || !previous || [...Object.keys(labels), "power_entity"].some(k => previous.states[this.config?.[k]] !== value.states[this.config?.[k]])) this.render();
+    if (QUEUES.includes(this.config?.line) || !previous
+      || previous.states[this.dailyTotalEntityId] !== value.states[this.dailyTotalEntityId]
+      || [...Object.keys(labels), "power_entity"].some(k => previous.states[this.config?.[k]] !== value.states[this.config?.[k]])) this.render();
   }
   connectedCallback() {
     const tick = () => {
@@ -387,6 +409,18 @@ class EscoOutageClock extends HTMLElement {
       { start: start?.state, duration_minutes: minutes },
       { start: activeStart?.state, duration_minutes: durationMinutes(activeDuration) },
     ];
+    const queue = start?.attributes?.line;
+    this.dailyTotalEntityId = Object.keys(states).find(id => id.startsWith("sensor.")
+      && queue != null && states[id].attributes?.line === queue
+      && states[id].attributes?.esco_field === "total_outage_minutes");
+    const sensorTotal = durationMinutes(states[this.dailyTotalEntityId]);
+    const scheduleAvailable = start && start.state !== "unavailable"
+      && start.attributes?.schedule_status !== "missing";
+    const todayTotal = scheduleAvailable
+      ? Number.isFinite(sensorTotal) ? sensorTotal
+        : Array.isArray(start.attributes?.outages) ? totalTimelineMinutes(dailyTimeline(timelineOutages, now)) : NaN
+      : NaN;
+    this.shadowRoot.querySelector(".timeline-total").textContent = dailyTotalLabel(todayTotal);
     const hideFinished = this.config?.clear_past_periods === true;
     const visibleTimelineOutages = hideFinished
       ? timelineOutages.filter(outage => new Date(outage.start).getTime()
@@ -421,6 +455,9 @@ class EscoOutageClock extends HTMLElement {
     }).format(tomorrow);
     this.shadowRoot.querySelector(".tomorrow-track").innerHTML = timelineTrack(tomorrowRanges);
     this.shadowRoot.querySelector(".tomorrow-list").textContent = tomorrowRanges.map(range => range.label).join(" · ");
+    this.shadowRoot.querySelector(".tomorrow-total").textContent = dailyTotalLabel(
+      totalTimelineMinutes(dailyTimeline(timelineOutages, now, tomorrow))
+    );
     const candidates = [
       [new Date(activeStart?.state), durationMinutes(activeDuration)],
       [from, minutes],
